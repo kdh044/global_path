@@ -63,10 +63,10 @@ rostopic echo /waypoints
 roslaunch faster_lio mapping_ouster32.launch
 
 # 2. 경로 시각화 노드 실행 (Bag 파일 자동 재생 포함)
-rosrun global_localization path_visualizer.py
+rosrun global_path_planner path_visualizer.py
 
 # 3. 카카오맵 웹서버 실행
-rosrun global_localization gps_server.py
+rosrun global_path_planner gps_server.py
 ```
 
 ### 한 번에 실행
