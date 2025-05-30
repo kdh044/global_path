@@ -82,7 +82,7 @@ roslaunch global_path_planner my_nodes.launch
 ### 1. ROS 노드 구성 (rqt_graph)
 ![ROS 노드 구성](rqt.png)
 
-시스템의 전체 노드 구성과 토픽 연결 상태를 확인할 수 있습니다.
+시스템의 전체 노드 구성
 
 ### 2. RViz 경로 시각화
 ![RViz 경로 시각화](rviz.png)
