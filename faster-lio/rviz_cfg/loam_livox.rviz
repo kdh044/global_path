@@ -13,6 +13,7 @@ Panels:
         - /Odometry1/Odometry1/Covariance1
         - /Odometry1/Odometry1/Covariance1/Position1
         - /Odometry1/Odometry1/Covariance1/Orientation1
+        - /MarkerArray1
         - /MarkerArray1/Namespaces1
       Splitter Ratio: 0.6432291865348816
     Tree Height: 777
@@ -33,7 +34,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: current_scan
+    SyncSource: ""
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -232,30 +233,6 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Show Trail: false
       Value: true
-    - Alpha: 0
-      Buffer Length: 2
-      Class: rviz/Path
-      Color: 25; 255; 255
-      Enabled: true
-      Head Diameter: 0
-      Head Length: 0
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.20000000298023224
-      Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 25; 255; 255
-      Pose Style: None
-      Queue Size: 10
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.4000000059604645
-      Shaft Length: 0.4000000059604645
-      Topic: /path
-      Unreliable: false
-      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: false
       Autocompute Value Bounds:
@@ -315,28 +292,19 @@ Visualization Manager:
       Use rainbow: true
       Value: false
     - Class: rviz/MarkerArray
-      Enabled: false
-      Marker Topic: /MarkerArray
+      Enabled: true
+      Marker Topic: /global_waypoints_array
       Name: MarkerArray
       Namespaces:
         {}
       Queue Size: 100
-      Value: false
+      Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /fasterlio_path
       Name: Marker
       Namespaces:
         fasterlio_path: true
-      Queue Size: 100
-      Value: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /global_waypoints
-      Name: Marker
-      Namespaces:
-        global_waypoints_cubes: true
-        global_waypoints_line: true
       Queue Size: 100
       Value: true
   Enabled: true
@@ -367,7 +335,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 417.150390625
+      Distance: 551.5350341796875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -375,9 +343,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 131.5439453125
-        Y: 30.335609436035156
-        Z: -46.33280563354492
+        X: -11.464946746826172
+        Y: 110.73568725585938
+        Z: 9.026103019714355
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
