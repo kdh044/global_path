@@ -50,7 +50,7 @@ rostopic echo /waypoints
 ### SLAM 기반 경로 시각화 (5월 29일 추가)
 ```bash
 # 1. FasterLIO SLAM 실행
-roslaunch faster-lio mapping_ouster32.launch
+roslaunch faster_lio mapping_ouster32.launch
 # 2. 경로 시각화 노드 및 가짜 주소 발행 (Bag 파일 자동 재생 포함/bag 파일 경로는 여기서 수정해주세요.)
 rosrun global_path_planner path_visualizer.py
 # 3. 카카오맵 웹서버 실행
