@@ -340,6 +340,7 @@ void LaserMapping::Run() {
         if (path_pub_en_ || path_save_en_) {
             PublishPath(pub_path_);
         }
+        return;    // visulizaton non-publish
         if (scan_pub_en_ || pcd_save_en_) {
             PublishFrameWorld();
         }
@@ -805,7 +806,8 @@ template <typename T>
 void LaserMapping::SetPosestamp(T &out) {
     out.pose.position.x = state_point_.pos(0);
     out.pose.position.y = state_point_.pos(1);
-    out.pose.position.z = state_point_.pos(2);
+    //out.pose.position.z = state_point_.pos(2);
+    out.pose.position.z = 0;
     out.pose.orientation.x = state_point_.rot.coeffs()[0];
     out.pose.orientation.y = state_point_.rot.coeffs()[1];
     out.pose.orientation.z = state_point_.rot.coeffs()[2];

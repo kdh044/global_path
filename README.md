@@ -1,114 +1,180 @@
-# 전자공학부 4학년 종합설계  
-## Mapless 자율주행 프로젝트
+# Global Path Planner
+Localization 및 Global Path 생성
 
----
+## 주요 기능
 
-## 개요
+- GPS + Waypoint 기능: 카카오 API를 활용한 웨이포인트 생성 및 자동 삭제 (5m 이내)
+- 3단계 FasterLIO 보정 시스템: GPS 기준 점진적 heading drift 보정
+- Waypoint 도달(5m 이내) 시 자동 삭제
+- 실시간 성능 분석: 궤적 정확도 실시간 모니터링 및 통계 분석
+- UTM 좌표계 통합: GPS와 SLAM 데이터의 일관된 좌표계 시각화
+- 오프라인 분석 지원: Bag 파일 기반 데이터 재현 및 분석
+- 실시간 성능 분석
 
-지도 없이 GPS 및 센서(LiDAR, IMU 등)를 활용해 실시간 Local Path를 생성하고 주행하는 경량 자율주행 시스템을 개발한다.  
-Global path는 Kakao Navi API로부터 waypoint 좌표를 받아 생성하고, local path는 라이다 기반 도로 인식을 통해 DWA 로컬 플래너로 구현한다.
+--- 
 
----
+## 시스템 구성
 
-## 1. 개인 작업
+### 3단계 FasterLIO 보정 시스템
 
-### 1.1 Global Path Planning (완료)
-- 패키지명: `global_localization`
-- Kakao Navi API를 통해 목적지 검색
-- Waypoint 및 목적지 위도/경도 좌표를 ROS 토픽으로 발행
+**실험 조건**: 총 주행거리 969.2m, 약 50분간 실시간 분석
 
-#### 실행 흐름
-1. `gps_server.py` 실행 → 웹 UI 생성  
-2. `gps_publisher.py` 실행 → GPS 좌표 수신  
-3. 웹에서 목적지 선택 → ROS 토픽 `/waypoints`로 전달
+| 단계 | 설명 | 평균 오차 |
+|------|------|-----------|
+| **Raw FasterLIO** | Odometry | ~344m |
+| **Initial Corrected** | 2m 이동 후 1회 GPS 이용하여 heading 정렬 | ~165m |
+| **Fully Corrected** |heading 정렬 후 + GPS 센서 이용하여 10초마다 점진적 보정 | ~1.3m |
 
-#### 명령어
-```bash
-rosrun global_localization gps_server.py
-rosrun global_localization gps_publisher.py
-rostopic echo waypoints
+**요약**:
+- **시간에 따른 성능 악화**: Initial Corrected는 110m → 400m+로 오차가 증가
+- **일관된 성능 유지**: Fully Corrected는 지속적으로 2-5m 정확도 유지
+- **최종 개선도**: Full vs Initial **99.2% 개선**
+
+
+
+### 핵심 요소 
+
+1. **FasterLIO SLAM**: LiDAR + IMU 기반 실시간 위치 추정
+2. **GPS 보정 시스템**: Heading drift 자동 감지 및 보정
+3. **UTM 좌표계 통합**: GPS와 SLAM 좌표의 일관된 처리
+4. **실시간 성능 분석**: 보정 효과 실시간 모니터링
+5. **카카오 API 연동**: 웹 인터페이스를 통한 경로 계획
+
+### 데이터 흐름
+```
+Bag 파일 (IMU + LiDAR) → FasterLIO → 3단계 보정 시스템 → /fused_odom → RViz
+     ↓                                    ↓
+GPS 원점 추출 → path_visualizer.py → UTM 변환 → 성능 분석 → analyzer.py
+     ↓
+/gps_data → 웹서버 → 카카오 API → /waypoints → RViz 시각화
 ```
 
----
+## 사용 방법
 
-### 1.2 Local Path Planning (진행 중)
-- DWA 기반 `move_base` 세팅
-- costmap 구성, RViz에서 실시간 경로 시각화 완료
-- 3D LiDAR를 2D LaserScan으로 변환하는 `pc2_to_scan` 설정 완료
-- TF 충돌 해결, joint_state publisher 제거
-- 실시간 주행 테스트 성공 (`Goal reached` 정상 확인)
-
-#### 진행중인 작업
-- DWA 파라미터 튜닝
-- base_link–odom 프레임 간 TF 미스매칭 해결
-
-#### 2025년 5월 10일 변경 사항
-- OS1 LiDAR 센서: 64채널 → 32채널로 변경해 연산 부담 경감
-- 센서 플러그인: CPU 기반(`libgazebo_ros_ouster_laser.so`) → GPU 가속 버전(`libgazebo_ros_ouster_gpu_laser.so`)으로 변경
-- Gazebo 시뮬레이션 실시간성(Real-Time Factor): **0.14 → 1.0**로  향상
-
----
-
-### 필수 패키지 설치 (Ubuntu 20.04 + ROS Noetic 기준)
+### 기본 실행 (2025.6.11 추가)
 ```bash
-sudo apt update && sudo apt install -y \
-ros-noetic-husky-desktop \
-ros-noetic-husky-simulator \
-ros-noetic-ackermann-msgs \
-ros-noetic-twist-mux \
-ros-noetic-teleop-twist-keyboard \
-ros-noetic-robot-localization \
-ros-noetic-joint-state-publisher-gui \
-ros-noetic-xacro \
-ros-noetic-gazebo-ros-pkgs \
-ros-noetic-gazebo-ros-control
+# 1. FasterLIO SLAM 실행
+roslaunch faster_lio mapping_ouster32.launch
+
+# 2. Bag 파일 재생
+rosrun global_path_planner bag_player.py
+
+# 3. 3단계 보정 및 경로 시각화
+rosrun global_path_planner path_visualizer.py
+
+# 4. 실시간 성능 분석
+rosrun global_path_planner analyzer.py
+
+# 5. 웹 인터페이스
+rosrun global_path_planner gps_server.py
 ```
 
-#### 실행 명령어
-```bash
-roslaunch husky_dwa husky_dwa_gazebo.launch
-roslaunch husky_dwa move_base.launch
-```
 
----
+## 주요 토픽
 
-## 2. 팀원 작업
+| 토픽명 | 메시지 타입 | 설명 |
+|--------|-------------|------|
+| `/Odometry` | nav_msgs/Odometry | FasterLIO SLAM 원본 결과 |
+| `/fused_odom` | nav_msgs/Odometry | 3단계 보정 적용 결과 |
+| `/ublox/fix` | sensor_msgs/NavSatFix | Bag GPS Ground Truth |
+| `/gps_data` | std_msgs/String | GPS 원점 좌표 (JSON) |
+| `/waypoints` | std_msgs/String | 카카오 API 경로 (JSON) |
+| `/analysis/raw_fasterlio` | nav_msgs/Odometry | 분석용 Raw 데이터 |
+| `/analysis/initial_corrected` | nav_msgs/Odometry | 분석용 Initial 보정 데이터 |
+| `/analysis/fully_corrected` | nav_msgs/Odometry | 분석용 Full 보정 데이터 |
 
-### 2.1 FasterLIO 적용 (예정)
-- 기존 ROS EKF localization 대체
-- IMU + LiDAR 기반 경량화된 Odometry 추정
-- 실환경에서도 고정밀 위치 추정 가능
 
----
+## 시각화 결과
 
-### 2.2 LaserMix 기반 Semantic Segmentation
-- 데이터셋: SemanticKITTI 기반
-- 클래스 축소: road, car, sidewalk, other-vehicle, unlabeled
-- 반지도학습(teacher-student network) 기반 모델 학습
-- `car` 외의 차량을 `other-vehicle`로 통합
+### 1. ROS 노드 구성 (rqt_graph)
+![ROS 노드 구성](rqt.png)
 
-#### 성능 향상
-- IoU: 67.45, 61.93 → +1.87%, +7.39%
-- mIoU: 74.69 → 84.75 → 87.67% (최대 약 +13%)
 
-#### 예정 기능
-- 도로 영역 마스크를 Local Costmap Layer로 반영
-- DWA 로컬 플래너가 도로 내에서만 주행하도록 유도
+### 2. RViz 경로 시각화
+![RViz 경로 시각화](rviz.png)
 
----
+**색상 구분**:
+- **파란색 선**: GPS Ground Truth (Bag 파일)
+- **회색 선**: Raw FasterLIO 궤적
+- **주황색 선**: Initial Corrected 궤적
+- **녹색 선**: Fully Corrected 궤적
+- **빨간색 선 + 노란색 큐브**: 카카오 API 웨이포인트
 
-## 3. 맵 파일 목록 (`.pcd` 기준)
 
-| 파일명          | 구간 요약 |
-|-----------------|------------|
-| mapping_01.pcd  | 6호관 ~ 7호관 사이 |
-| mapping_02.pcd  | 제2도서관 → 연구단지 방향 |
-| mapping_03.pcd  | 농대 → 중도 정문 |
-| mapping_04.pcd  | 건지광장 일대 |
-| mapping_05.pcd  | 7호관 → 2호관 → 4호관 → 3호관 → 공대입구 |
-| mapping_06.pcd  | 자연대 본관 → 3호관 |
-| mapping_07.pcd  | 공대 입구 → 진수당 순환 |
-| mapping_08.pcd  | 진수당 주차장 → 법대 → 본부별관 |
-| mapping_09.pcd  | 법대 ~ 제2도서관 (loop closer 없음) |
-| mapping_10.pcd  | 경상대 2호관 → 법대 내리막 |
-| mapping_11.pcd  | 공대 공장동 → 후생관 → 인문대 → 실크로드 센터 |
+### 성능 분석 결과
+- **실시간 오차 모니터링**: GPS 대비 위치 오차 실시간 추적
+- **자동 리포트 생성**: JSON/CSV 형태의 상세 분석 데이터
+- **시각화 플롯**: 궤적 비교, 오차 분포, 개선도 분석
+
+## 출력 파일
+
+### 분석 결과 (`/tmp/improved_three_stage_analysis/`)
+- `correction_focused_trajectory.png`: 보정 시스템 중심 궤적 비교
+- `correction_performance_analysis.png`: 보정 성능 상세 분석
+- `full_system_analysis.png`: 전체 시스템 종합 분석
+- `performance_report.json`: 성능 통계 요약
+- `complete_analysis_data.json`: 완전한 궤적 및 시계열 데이터
+- `timeseries_analysis.json`: 시계열 분석용 데이터
+- 'rqt.png
+
+
+### CSV 파일 (연구용)
+- `gps_ground_truth.csv`: GPS 궤적 데이터
+- `raw_fasterlio.csv`: Raw FasterLIO 궤적
+- `fully_corrected.csv`: 보정된 궤적
+- `realtime_errors.csv`: 시계열 오차 데이터
+
+## 기술적 특징
+
+### GPS-SLAM 좌표계 통합
+- Bag 파일의 첫 GPS 좌표를 UTM 원점으로 설정
+- FasterLIO의 odom 프레임과 GPS 웨이포인트를 동일한 좌표계에서 표시
+- 실시간 TF 브로드캐스트 (map ↔ odom)
+
+### 3단계 보정 알고리즘
+1. **위치 초기화**: 첫 실시간 GPS로 UTM 원점 설정
+2. **초기 정렬**: 2m 이동 후 GPS 방향 기반 heading 보정
+3. **점진적 보정**: 10초마다 GPS와 비교하여 10%씩 점진적 보정
+
+### 자동화 기능
+- Bag 파일 자동 재생 및 GPS 원점 추출
+- 거리 필터링으로 궤적 포인트 저장 (메모리 최적화)
+- 웹 브라우저 자동 실행
+- 실시간 성능 분석 및 리포트 생성
+
+## 개발 이력
+
+### 2025년 3월
+- gps_server.py로 웹 프롬프트 제공
+- Waypoint 접근 시 삭제 로직 구현 (5m 이내)
+- ROS 토픽 구조 설계 (/waypoints 등)
+- gps_publisher.py 및 기능 보완
+- 목적지 검색창 제거, waypoint ROS 토픽 전송
+
+### 2025년 5월
+- FasterLIO 연동을 통한 SLAM 기반 경로 시각화 추가
+- Bag 파일 자동 재생 및 GPS 원점 추출 기능
+- RViz를 통한 실시간 궤적 및 Global waypoints 시각화
+- UTM 좌표 변환을 통한 GPS-SLAM 좌표계 통합
+- **Waypoint 잔상 문제 해결**: MarkerArray 사용으로 이전 waypoint 마커 자동 삭제
+- **Global path 업데이트 문제 해결**: 즉시 시각화 업데이트 및 타이밍 이슈 개선
+
+### 2025년 6월
+- **3단계 FasterLIO 보정 시스템 구현**
+- **실시간 성능 분석기** (`analyzer.py`) 추가
+- **완전한 데이터 저장 시스템** 구축 (JSON/CSV)
+- **bag_player.py 독립화**
+
+
+## 요구사항
+
+- ROS Noetic
+- FasterLIO
+- Python 3
+- 필수 패키지: `utm`, `numpy`, `matplotlib`, `pandas` (선택사항)
+
+
+## 기타 사항
+- /waypoints 토픽을 통해 RViz에서 시각화 가능
+- GPS 수신 기반이라 야외 주행을 위한 기반 기능임
+

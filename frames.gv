@@ -1,8 +1,0 @@
-digraph G {
-"map" -> "camera_init"[label="Broadcaster: /simplified_path_system_59296_1748456634297\nAverage rate: 10.227 Hz\nMost recent transform: 1748456640.412 ( 0.051 sec old)\nBuffer length: 4.400 sec\n"];
-"camera_init" -> "body"[label="Broadcaster: /laserMapping\nAverage rate: 15.017 Hz\nMost recent transform: 1736564716.993 ( 11891923.470 sec old)\nBuffer length: 0.200 sec\n"];
-edge [style=invis];
- subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
-"Recorded at time: 1748456640.463"[ shape=plaintext ] ;
- }->"map";
-}
