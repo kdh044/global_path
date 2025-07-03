@@ -71,22 +71,6 @@
                 });
             }
 
-            if (currentAccuracyCircle) {
-                currentAccuracyCircle.setPosition(locPosition);
-            } else {
-                currentAccuracyCircle = new kakao.maps.Circle({
-                    center: locPosition,
-                    radius: 50,
-                    strokeWeight: 2,
-                    strokeColor: '#00A0E9',
-                    strokeOpacity: 0.8,
-                    strokeStyle: 'solid',
-                    fillColor: '#00A0E9',
-                    fillOpacity: 0.3,
-                    map: map
-                });
-            }
-
             map.setCenter(locPosition);
             checkWaypointPass(lat, lon);
             

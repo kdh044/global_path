@@ -22,22 +22,25 @@
             font-size: 16px;
             font-weight: bold;
             z-index: 1;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         }
     </style>
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=5aefe0539358793ca2935a52f01e03db&libraries=services"></script>
 </head>
 <body>
-    <div id="status">경로를 찾는 중...</div>
+    <div id="status">GPS 연결 대기 중...</div>
     <div id="map"></div>
 
     <script>
+        // ✅ 전북대 좌표로 초기화
         var map = new kakao.maps.Map(document.getElementById('map'), {
-            center: new kakao.maps.LatLng(37.5665, 126.9780),
+            center: new kakao.maps.LatLng(35.8450893, 127.13304149999999), // 전북대
             level: 3
         });
 
         var currentMarker = null;
-        var currentAccuracyCircle = null;
+        // ✅ 파란 정확도 원 변수 완전 제거
+        // var currentAccuracyCircle = null; (삭제됨)
         var destinationMarker = null;
         var routePolyline = null;
         var passedPolyline = new kakao.maps.Polyline({
@@ -56,10 +59,13 @@
         var ws = null;
         var waypointsWs = null;
 
+        // ✅ GPS 고정 제어 변수
+        var firstGpsReceived = false;
+
         function updateLocation(lat, lon) {
             if (!lat || !lon) return;
             var locPosition = new kakao.maps.LatLng(lat, lon);
-            console.log(" 현재 위치 업데이트:", lat, lon);
+            console.log("📍 현재 위치 업데이트:", lat, lon);
 
             if (currentMarker) {
                 currentMarker.setPosition(locPosition);
@@ -71,30 +77,26 @@
                 });
             }
 
-            if (currentAccuracyCircle) {
-                currentAccuracyCircle.setPosition(locPosition);
-            } else {
-                currentAccuracyCircle = new kakao.maps.Circle({
-                    center: locPosition,
-                    radius: 50,
-                    strokeWeight: 2,
-                    strokeColor: '#00A0E9',
-                    strokeOpacity: 0.8,
-                    strokeStyle: 'solid',
-                    fillColor: '#00A0E9',
-                    fillOpacity: 0.3,
-                    map: map
-                });
+            // ✅ 파란 정확도 원 관련 코드 완전 제거
+            // if (currentAccuracyCircle) { ... } (모든 관련 코드 삭제됨)
+
+            // ✅ 첫 GPS 수신 시에만 지도 중심 이동
+            if (!firstGpsReceived) {
+                map.setCenter(locPosition);
+                firstGpsReceived = true;
+                console.log("🎯 첫 GPS 수신 완료 - 지도 중심 설정됨");
+                document.getElementById("status").innerText = "GPS 연결 완료! 지도를 자유롭게 움직일 수 있습니다.";
             }
 
-            map.setCenter(locPosition);
             checkWaypointPass(lat, lon);
-            
         }
+
         function getRouteData(startPos, endPos) {
             var url = 'https://apis-navi.kakaomobility.com/v1/directions';
             url += '?origin=' + startPos.getLng() + ',' + startPos.getLat();
             url += '&destination=' + endPos.getLng() + ',' + endPos.getLat();
+
+            document.getElementById("status").innerText = "경로 계산 중...";
 
             fetch(url, {
                 method: 'GET',
@@ -104,10 +106,11 @@
             })
             .then(response => response.json())
             .then(data => {
-                console.log("📡 전체 경로 데이터:", data); // 🔥 추가
+                console.log("📡 전체 경로 데이터:", data);
                 
                 if (!data.routes || data.routes.length === 0) {
                     console.error("❌ 경로를 찾을 수 없습니다.");
+                    document.getElementById("status").innerText = "경로를 찾을 수 없습니다.";
                     return;
                 }
 
@@ -115,62 +118,62 @@
                 currentWaypointIndex = 0;
                 passedPolyline.setPath([]);
 
-                // 🔥 디버깅 로그 추가
                 console.log("📍 sections 개수:", data.routes[0].sections.length);
                 console.log("📍 roads 개수:", data.routes[0].sections[0].roads.length);
 
                 data.routes[0].sections[0].roads.forEach(function(road, roadIndex) {
-                    console.log(`📍 Road ${roadIndex} vertexes:`, road.vertexes); // 🔥 추가
+                    console.log(`📍 Road ${roadIndex} vertexes:`, road.vertexes);
                     
                     for (let i = 0; i < road.vertexes.length; i += 2) {
                         var lng = road.vertexes[i];
                         var lat = road.vertexes[i + 1];
                         
-                        if (lng && lat) { // 🔥 유효성 검사 추가
+                        if (lng && lat) {
                             waypoints.push(new kakao.maps.LatLng(lat, lng));
-                            console.log(`📍 Waypoint ${waypoints.length}: ${lat}, ${lng}`); // 🔥 추가
+                            console.log(`📍 Waypoint ${waypoints.length}: ${lat}, ${lng}`);
                         }
                     }
                 });
 
-                console.log("🗺️ 최종 웨이포인트 개수:", waypoints.length); // 🔥 추가
+                console.log("🗺️ 최종 웨이포인트 개수:", waypoints.length);
                 
                 if (waypoints.length > 0) {
                     drawRoute(waypoints);
                     drawWaypointMarkers(waypoints);
-                    sendWaypointsToROS(); // ✅ waypoints가 있을 때만 전송
+                    sendWaypointsToROS();
+                    document.getElementById("status").innerText = "🚗 경로 설정 완료! 자율주행을 시작합니다.";
                 } else {
                     console.error("❌ 추출된 waypoints가 없습니다!");
+                    document.getElementById("status").innerText = "웨이포인트를 추출할 수 없습니다.";
                 }
             })
             .catch(error => {
                 console.error("❌ 경로 데이터 요청 실패:", error);
+                document.getElementById("status").innerText = "경로 요청 실패. 다시 시도해주세요.";
             });
-}
+        }
 
-        // ✅ ROS로 Waypoints 전송 함수
         function sendWaypointsToROS() {
             if (waypoints.length === 0) {
                 console.error("❌ 전송할 Waypoints 데이터가 없습니다.");
                 return;
             }
 
-            // 목적지 좌표 추가
             var destinationData = destinationLatLng
                 ? { lat: destinationLatLng.getLat(), lon: destinationLatLng.getLng() }
                 : null;
 
             var waypointsData = {
                 waypoints: waypoints.map(wp => ({ lat: wp.getLat(), lon: wp.getLng() })),
-                destination: destinationData // ✅ 목적지 좌표 추가
+                destination: destinationData
             };
 
             if (waypointsWs && waypointsWs.readyState === WebSocket.OPEN) {
                 waypointsWs.send(JSON.stringify(waypointsData));
                 console.log("📡 Waypoints & 목적지 데이터 전송됨:", waypointsData);
-                document.getElementById("status").innerText = "📡 Waypoints & 목적지 전송 완료!";
             } else {
                 console.error("❌ Waypoints WebSocket이 닫혀 있습니다.");
+                document.getElementById("status").innerText = "연결 오류: Waypoints 전송 실패";
             }
         }
 
@@ -192,11 +195,11 @@
             });
             waypointMarkers = [];
 
-            coords.forEach(function(coord) {
+            coords.forEach(function(coord, index) {
                 var marker = new kakao.maps.Marker({
                     position: coord,
                     map: map,
-                    title: "웨이포인트",
+                    title: `웨이포인트 ${index + 1}`,
                     image: new kakao.maps.MarkerImage(
                         "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png",
                         new kakao.maps.Size(24, 35)
@@ -212,7 +215,7 @@
             let waypoint = waypoints[currentWaypointIndex];
             let distance = haversineDistance(lat, lon, waypoint.getLat(), waypoint.getLng());
 
-            if (distance < 5) {
+            if (distance < 10) { // ✅ 10m 임계값으로 조정
                 console.log("🟢 웨이포인트 통과:", currentWaypointIndex);
 
                 waypointMarkers[currentWaypointIndex].setMap(null);
@@ -229,15 +232,15 @@
                 if (progress > 100) progress = 100;
 
                 if (currentWaypointIndex >= waypoints.length) {
-                    document.getElementById("status").innerText = "목적지에 도착했습니다!";
+                    document.getElementById("status").innerText = "🎉 목적지에 도착했습니다!";
                 } else {
-                    // ✅ 템플릿 리터럴(``` ` ```) 사용하여 올바르게 수정
-                    document.getElementById("status").innerText = `진행률: ${progress}%`;
+                    document.getElementById("status").innerText = `🚗 자율주행 진행률: ${progress}% (${currentWaypointIndex}/${waypoints.length})`;
                 }
 
-                console.log("진행률:", progress, "%");
+                console.log("📊 진행률:", progress, "%");
             }
-}
+        }
+
         function haversineDistance(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const toRad = degree => degree * Math.PI / 180;
@@ -246,9 +249,7 @@
             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
                 Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            return R
-
-            * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
 
         kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
@@ -265,7 +266,7 @@
             }
 
             destinationLatLng = clickedPosition;
-            console.log(" 목적지 선택:", clickedPosition.getLat(), clickedPosition.getLng());
+            console.log("🎯 목적지 선택:", clickedPosition.getLat(), clickedPosition.getLng());
 
             document.getElementById("status").innerText = "클릭한 위치로 경로 계산 중...";
 
@@ -282,8 +283,8 @@
 
             ws.onopen = function () {
                 console.log("✅ GPS WebSocket 연결 성공!");
-                document.getElementById("status").innerText = "GPS 연결됨. 목적지를 선택해주세요.";
-                connectWaypointsWebSocket(); // ✅ GPS 연결 후 Waypoints WebSocket 실행 보장
+                document.getElementById("status").innerText = "📡 GPS 연결됨. 목적지를 클릭해주세요.";
+                connectWaypointsWebSocket();
             };
 
             ws.onmessage = function (event) {
@@ -314,7 +315,7 @@
         function connectWaypointsWebSocket() {
             if (waypointsWs && (waypointsWs.readyState === WebSocket.OPEN || waypointsWs.readyState === WebSocket.CONNECTING)) {
                 console.log("⚠️ Waypoints WebSocket 이미 연결됨.");
-                return; // ✅ 이미 연결되어 있으면 재연결 시도하지 않음
+                return;
             }
 
             waypointsWs = new WebSocket("ws://localhost:8766");
@@ -333,10 +334,8 @@
             };
         }
 
-        // ✅ WebSocket 최초 실행 (한 번만)
+        // ✅ 초기 WebSocket 연결 시작
         connectWebSocket();
-
-
     </script>
 </body>
 </html>

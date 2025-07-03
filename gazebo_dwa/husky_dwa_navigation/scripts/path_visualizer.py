@@ -570,29 +570,146 @@ class UTMLocalHeadingCorrection:
             self.latest_waypoints = None
     
     def broadcast_dynamic_tf(self, event):
-        """🔥 동적 TF 브로드캐스트 - UTM Local 좌표계"""
+        """🔥 완전한 TF tree 구성 - 모든 프레임 연결"""
         if self.current_pose_local is None:
             return
         
         current_time = rospy.Time.now()
+        transforms = []
         
-        # utm_local -> base_link 직접 변환
-        local_to_base = TransformStamped()
-        local_to_base.header.stamp = current_time
-        local_to_base.header.frame_id = "utm_local"
-        local_to_base.child_frame_id = "base_link"
+        # ===== 메인 좌표계 체인 =====
         
-        local_to_base.transform.translation.x = self.current_pose_local["x"]
-        local_to_base.transform.translation.y = self.current_pose_local["y"]
-        local_to_base.transform.translation.z = self.current_pose_local["z"]
-        local_to_base.transform.rotation.x = self.current_pose_local["qx"]
-        local_to_base.transform.rotation.y = self.current_pose_local["qy"]
-        local_to_base.transform.rotation.z = self.current_pose_local["qz"]
-        local_to_base.transform.rotation.w = self.current_pose_local["qw"]
+        # ✅ 1. map -> utm_local (RViz 호환성)
+        map_to_utm = TransformStamped()
+        map_to_utm.header.stamp = current_time
+        map_to_utm.header.frame_id = "map"
+        map_to_utm.child_frame_id = "utm_local"
+        map_to_utm.transform.rotation.w = 1.0  # 단위 변환
+        transforms.append(map_to_utm)
         
-        self.tf_broadcaster.sendTransform(local_to_base)
+        # ✅ 2. utm_local -> body (FasterLIO 메인 연결)
+        utm_to_body = TransformStamped()
+        utm_to_body.header.stamp = current_time
+        utm_to_body.header.frame_id = "utm_local"
+        utm_to_body.child_frame_id = "body"
         
-        rospy.loginfo_throttle(10, f"📡 동적 TF 발행: utm_local->base_link ({self.current_pose_local['x']:.1f}, {self.current_pose_local['y']:.1f})")
+        utm_to_body.transform.translation.x = self.current_pose_local["x"]
+        utm_to_body.transform.translation.y = self.current_pose_local["y"]
+        utm_to_body.transform.translation.z = self.current_pose_local["z"]
+        utm_to_body.transform.rotation.x = self.current_pose_local["qx"]
+        utm_to_body.transform.rotation.y = self.current_pose_local["qy"]
+        utm_to_body.transform.rotation.z = self.current_pose_local["qz"]
+        utm_to_body.transform.rotation.w = self.current_pose_local["qw"]
+        
+        transforms.append(utm_to_body)
+        
+        # ✅ 3. body -> base_link (로봇 표준 연결)
+        body_to_base = TransformStamped()
+        body_to_base.header.stamp = current_time
+        body_to_base.header.frame_id = "body"
+        body_to_base.child_frame_id = "base_link"
+        body_to_base.transform.rotation.w = 1.0  # 단위 변환
+        transforms.append(body_to_base)
+        
+        # ===== FasterLIO 호환성 =====
+        
+        # ✅ 4. camera_init -> body (FasterLIO 요구사항)
+        camera_to_body = TransformStamped()
+        camera_to_body.header.stamp = current_time
+        camera_to_body.header.frame_id = "camera_init"
+        camera_to_body.child_frame_id = "body"
+        
+        # FasterLIO 원점 기준 상대 위치 계산
+        if self.current_body_pose and self.fasterlio_origin:
+            rel_x = self.current_body_pose["x"] - self.fasterlio_origin["x"]
+            rel_y = self.current_body_pose["y"] - self.fasterlio_origin["y"]
+            camera_to_body.transform.translation.x = rel_x
+            camera_to_body.transform.translation.y = rel_y
+            camera_to_body.transform.translation.z = 0.0
+            
+            # Heading 보정 적용
+            if self.correction_system["initial_alignment_done"]:
+                correction_yaw = self.correction_system["heading_correction"]
+                camera_to_body.transform.rotation.z = math.sin(correction_yaw / 2.0)
+                camera_to_body.transform.rotation.w = math.cos(correction_yaw / 2.0)
+            else:
+                camera_to_body.transform.rotation.w = 1.0
+        else:
+            camera_to_body.transform.rotation.w = 1.0
+        
+        transforms.append(camera_to_body)
+        
+        # ===== 센서 프레임들 =====
+        
+        # ✅ 5. base_link -> os_sensor (Ouster 센서 마운트)
+        base_to_os_sensor = TransformStamped()
+        base_to_os_sensor.header.stamp = current_time
+        base_to_os_sensor.header.frame_id = "base_link"
+        base_to_os_sensor.child_frame_id = "os_sensor"
+        base_to_os_sensor.transform.translation.x = 0.0
+        base_to_os_sensor.transform.translation.y = 0.0
+        base_to_os_sensor.transform.translation.z = 0.3  # 센서 높이
+        base_to_os_sensor.transform.rotation.w = 1.0
+        transforms.append(base_to_os_sensor)
+        
+        # ✅ 6. os_sensor -> os1_lidar
+        os_sensor_to_lidar = TransformStamped()
+        os_sensor_to_lidar.header.stamp = current_time
+        os_sensor_to_lidar.header.frame_id = "os_sensor"
+        os_sensor_to_lidar.child_frame_id = "os1_lidar"
+        os_sensor_to_lidar.transform.rotation.w = 1.0
+        transforms.append(os_sensor_to_lidar)
+        
+        # ✅ 7. os_sensor -> os1_imu
+        os_sensor_to_imu = TransformStamped()
+        os_sensor_to_imu.header.stamp = current_time
+        os_sensor_to_imu.header.frame_id = "os_sensor"
+        os_sensor_to_imu.child_frame_id = "os1_imu"
+        os_sensor_to_imu.transform.rotation.w = 1.0
+        transforms.append(os_sensor_to_imu)
+        
+        # ===== 휠 프레임들 (robot_state_publisher 보완) =====
+        
+        # ✅ 8. base_link -> 각 휠들 (Husky 기본 구조)
+        wheel_positions = {
+            "front_left_wheel_link": [0.256, 0.2854, 0.0],
+            "front_right_wheel_link": [0.256, -0.2854, 0.0],
+            "rear_left_wheel_link": [-0.256, 0.2854, 0.0],
+            "rear_right_wheel_link": [-0.256, -0.2854, 0.0]
+        }
+        
+        for wheel_name, position in wheel_positions.items():
+            wheel_tf = TransformStamped()
+            wheel_tf.header.stamp = current_time
+            wheel_tf.header.frame_id = "base_link"
+            wheel_tf.child_frame_id = wheel_name
+            wheel_tf.transform.translation.x = position[0]
+            wheel_tf.transform.translation.y = position[1]
+            wheel_tf.transform.translation.z = position[2]
+            wheel_tf.transform.rotation.w = 1.0
+            transforms.append(wheel_tf)
+        
+        # ===== odometry 프레임 추가 =====
+        
+        # ✅ 9. utm_local -> odom (일부 패키지 호환성)
+        utm_to_odom = TransformStamped()
+        utm_to_odom.header.stamp = current_time
+        utm_to_odom.header.frame_id = "utm_local"
+        utm_to_odom.child_frame_id = "odom"
+        utm_to_odom.transform.rotation.w = 1.0
+        transforms.append(utm_to_odom)
+        
+        # 모든 TF 발행
+        self.tf_broadcaster.sendTransform(transforms)
+        
+        rospy.loginfo_throttle(30, f"""
+        📡 완전한 TF Tree 발행 완료:
+        map -> utm_local -> body -> base_link
+                        -> odom
+        camera_init -> body
+        base_link -> os_sensor -> [os1_lidar, os1_imu]
+                    -> [4개 휠 프레임들]
+        """)
     
     def publish_current_pose(self, event):
         """현재 위치 발행 - UTM Local 좌표계"""
@@ -833,16 +950,27 @@ class UTMLocalHeadingCorrection:
         return marker
     
     def publish_origin_info(self, event):
-        """UTM 원점 정보 발행"""
-        if self.utm_origin_absolute:
-            # GPS 원점 정보 (기존 호환성)
+        """실시간 GPS 데이터 발행 - 웹 마커 업데이트용 (간단 버전)"""
+        # ✅ 실시간 GPS 데이터가 있으면 최신 GPS 전송
+        if self.last_good_gps:
+            gps_data = {
+                "latitude": self.last_good_gps["lat"],
+                "longitude": self.last_good_gps["lon"]
+            }
+            self.gps_data_pub.publish(json.dumps(gps_data))
+            rospy.loginfo_throttle(5, f"📡 실시간 GPS → 웹: ({gps_data['latitude']:.6f}, {gps_data['longitude']:.6f})")
+            
+        # ✅ 실시간 GPS가 없으면 UTM 원점만 전송 (fallback)
+        elif self.utm_origin_absolute:
             gps_data = {
                 "latitude": self.utm_origin_absolute["lat"],
                 "longitude": self.utm_origin_absolute["lon"]
             }
             self.gps_data_pub.publish(json.dumps(gps_data))
-            
-            # 상세한 UTM 원점 정보
+            rospy.loginfo_throttle(10, f"📡 UTM 원점 → 웹: ({gps_data['latitude']:.6f}, {gps_data['longitude']:.6f})")
+        
+        # UTM 원점 정보도 발행 (기존 기능 유지)
+        if self.utm_origin_absolute:
             origin_info = {
                 "utm_zone": self.utm_zone,
                 "utm_origin_absolute": {
